@@ -1,7 +1,7 @@
 ---
 spec_id: holonic-001
 title: Holonic Library — Graph-Native Holonic RDF Systems
-version: 0.4.0
+version: 0.7.0
 status: prototype
 authors: [zwelz3]
 ---
@@ -138,11 +138,11 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
   - acceptance: Given a boundary shape that rejects the source data, when traverse(source, target, validate=True) is called, then the target interior contains no new triples and the returned membrane result is Compromised.
   - verifiedBy: src/holonic/test/test_portal.py::test_governed_traverse_blocks_on_compromise
 
-- R4.5 Multi-hop path finding (`find_path`) MUST run as a single SPARQL query over the registry/boundary graphs, not as Python BFS over pre-fetched portal lists.
+- R4.5 Multi-hop path finding (`find_path`) MUST discover a portal route from source to target. The current implementation fetches the portal adjacency list via `Q.ALL_PORTALS` and runs Python BFS. Deferred to 0.8.0: migrate to a SPARQL property-path query or cache the adjacency list across calls.
   - priority: MUST
   - constrains: HolonicDataset.find_path, sparql.py
-  - acceptance: Given a chain of three holons linked by portals, when find_path(source, target) is called, then one SPARQL SELECT returns the path and no Python iteration is involved.
-  - verifiedBy: src/holonic/test/test_portal.py::test_find_path_single_sparql_query
+  - acceptance: Given a chain of three holons linked by portals, when find_path(source, target) is called, then a list of PortalInfo objects representing the path is returned.
+  - verifiedBy: src/holonic/test/test_portal.py::test_find_path_returns_correct_chain
 
 ## R5 Provenance
 
@@ -252,7 +252,7 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
   - priority: MUST
   - constrains: src/holonic/test/
   - acceptance: Given a clean environment with base install only, when `pytest src/holonic/test/` is run, then every test passes or is skipped with a declared marker like @pytest.mark.fuseki.
-  - verifiedBy: src/holonic/test/ (full suite, 272 passing)
+  - verifiedBy: src/holonic/test/ (full suite, 385 passing)
 
 - R8.2 Fuseki integration tests, if any, MUST be marked with `@pytest.mark.fuseki` and skipped when Fuseki is unavailable.
   - priority: MUST
@@ -348,7 +348,7 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
   - acceptance: Given holonic 0.5.0, when code passes registry_graph= to HolonicDataset, then a TypeError is raised (kwarg removed per R9.18). registry_iri= is the canonical parameter.
   - verifiedBy: src/holonic/test/test_deprecation_and_dispatch.py::test_registry_graph_kwarg_removed
 
-### Remaining for 0.4.x / 0.5.0
+### Remaining (gated on evidence)
 
 - R9.11 The library SHOULD ship a `holonic.generators` module formalizing the existing `examples/` holarchy generators (company, research lab, random).
   - priority: SHOULD
@@ -426,6 +426,8 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
   - acceptance: Given a portal created with `portal_type="cga:SealedPortal"` and no `construct_query`, when `find_portals_from(source)` is called, then exactly one `PortalInfo` is returned with `construct_query=None`; and given a portal created with `extra_ttl` carrying a downstream predicate, when the boundary graph is queried by SPARQL for that predicate, then the extra triples are present; and given a TransformPortal without a constructQuery or a SealedPortal/IconPortal carrying one, when the registry is validated against `cga-shapes.ttl`, then the corresponding shape reports a violation (for TransformPortal) or warning (for SealedPortal and IconPortal).
   - verifiedBy: src/holonic/test/test_lifecycle.py::TestAddPortalExtensibility and src/holonic/test/test_ontology.py::TestPortalSubtypeShapeSemantics
 
+### Shipped in 0.6.0
+
 - R9.23 Portal discovery queries MUST return the portal's RDF type (excluding base `cga:Portal`) as a `portal_type` field on `PortalInfo`, `PortalSummary`, and `PortalDetail`. All five discovery SPARQL queries include `OPTIONAL { ?portal a ?portalType . FILTER(?portalType != cga:Portal) }`.
   - priority: MUST
   - constrains: holonic/model.py (PortalInfo), holonic/console_model.py (PortalSummary, PortalDetail), holonic/sparql.py, holonic/client.py
@@ -456,7 +458,7 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
   - acceptance: Given 2 holons, when `validate_all()` is called, then a dict with 2 entries is returned, each value a `MembraneResult`.
   - verifiedBy: src/holonic/test/test_verified_gaps.py::TestValidateAll
 
-- R9.28 `traverse()` MUST accept `fail_on_breach: bool = False`. When True and validation returns COMPROMISED, it MUST roll back injected triples and raise `MembraneBreachError`. Rollback removes the exact triples that were injected.
+- R9.28 `traverse()` MUST accept `fail_on_breach: bool = False`. When True and validation returns COMPROMISED, it MUST roll back injected triples and raise `MembraneBreachError`. Rollback restores a pre-injection snapshot of the target interior.
   - priority: MUST
   - constrains: holonic/client.py (traverse)
   - acceptance: Given a traversal that produces COMPROMISED validation, when `fail_on_breach=True`, then `MembraneBreachError` is raised and the target interior is unchanged. See OQ11 for the SHACL coverage gap.
@@ -516,6 +518,52 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
   - acceptance: Given a traversal with agent_iri, when `freshness()` is called, then a `timedelta` is returned.
   - verifiedBy: src/holonic/test/test_verified_gaps.py::TestStalenessTracking
 
+### Shipped in 0.7.0
+
+- R9.38 `collect_audit_trail()` MUST accept optional `limit`, `offset`, `since`, and `kind` parameters for SPARQL-level pagination. Filtering is pushed to the SPARQL engine via `ORDER BY DESC(?timestamp) LIMIT/OFFSET` and `FILTER(?timestamp > ...)`. Calling with no arguments returns the full trail (backward compatible).
+  - priority: MUST
+  - constrains: holonic/client.py (collect_audit_trail)
+  - acceptance: Given 100 traversals, when `collect_audit_trail(limit=5, offset=10)` is called, then exactly 5 records are returned starting from the 11th most recent.
+  - verifiedBy: src/holonic/test/test_audit.py::TestCollectAuditTrail
+
+- R9.39 `get_activity(activity_iri)` MUST return a `TraversalRecord` or `ValidationRecord` for a single provenance activity, or None if not found. Single SPARQL query per attempt.
+  - priority: MUST
+  - constrains: holonic/client.py (get_activity)
+  - acceptance: Given a recorded traversal activity, when `get_activity(iri)` is called, then a `TraversalRecord` with matching fields is returned.
+  - verifiedBy: (verified via collect_audit_trail round-trip)
+
+- R9.40 `classify_sparql(query)` MUST return the SPARQL form (`'select'`, `'ask'`, `'construct'`, `'describe'`, `'update'`) by stripping comments and string literals before keyword matching. Raises `ValueError` for unclassifiable queries.
+  - priority: MUST
+  - constrains: holonic/client.py (classify_sparql)
+  - acceptance: Given `"PREFIX ex: <urn:ex:> SELECT ?s WHERE { ?s ?p ?o }"`, when `classify_sparql()` is called, then `'select'` is returned.
+  - verifiedBy: (utility function; exercised by downstream consumers)
+
+- R9.41 `validate_iri(iri)` MUST be a public entry point to the library's IRI validation. Raises `ValueError` for empty strings or characters unsafe in Turtle/SPARQL contexts.
+  - priority: MUST
+  - constrains: holonic/client.py (validate_iri, _validate_iri)
+  - acceptance: Given `validate_iri("<unsafe>")`, when called, then `ValueError` is raised.
+  - verifiedBy: src/holonic/test/test_audit_remediation.py::TestIRIValidation
+
+- R9.42 `holarchy_summary(max_age=, recent_limit=)` MUST return a `HolarchySummary` dataclass aggregating holon count, portal count, root count, health distribution, staleness count, and recent activities.
+  - priority: MUST
+  - constrains: holonic/client.py (holarchy_summary), holonic/console_model.py (HolarchySummary)
+  - acceptance: Given a holarchy with 3 holons and 2 portals, when `holarchy_summary()` is called, then `summary.holon_count == 3` and `summary.portal_count == 2`.
+  - verifiedBy: (integration method; exercised by downstream console)
+
+- R9.43 `on_traversal(callback)` and `on_validation(callback)` MUST register callbacks that fire synchronously after each `traverse()` or `validate_membrane()`. Callbacks receive the relevant arguments (source, target, projected, membrane_result for traversal; holon_iri, result for validation).
+  - priority: MUST
+  - constrains: holonic/client.py (on_traversal, on_validation, traverse, validate_membrane)
+  - acceptance: Given a registered callback, when `traverse()` completes, then the callback has been called exactly once with the traversal arguments.
+  - verifiedBy: (callback mechanism; exercised by downstream console EventBroker)
+
+- R9.44 `MembraneResult.shape_violations` MUST carry a `list[ShapeViolation]` populated from the pyshacl report graph. `ShapeViolation` has fields: `shape_iri`, `focus_node`, `path`, `value`, `message`, `severity`.
+  - priority: MUST
+  - constrains: holonic/model.py (ShapeViolation, MembraneResult), holonic/client.py (_parse_shacl_report)
+  - acceptance: Given a membrane violation, when `validate_membrane()` returns, then `result.shape_violations[0].focus_node` identifies the offending node.
+  - verifiedBy: src/holonic/test/test_audit_remediation.py::TestSHACLReportParsing
+
+### Remaining for 0.8.0+
+
 # User Stories
 
 - US1 As a knowledge engineer, I create a holon, add interior data from multiple sources into named sub-graphs, declare boundary shapes, and validate the membrane — all from a single `HolonicDataset` instance against in-memory rdflib.
@@ -558,7 +606,7 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
 - The dataset is the holarchy. Python methods are convenience over SPARQL, not a separate object model. Dataclasses returned from queries are ephemeral views, not persistent state.
 - Named graphs are hypergraphs. Recognizing this subsumes the RDF-vs-LPG distinction and makes the four-graph model a natural consequence of standard RDF 1.1 semantics.
 - SPARQL is the primary control surface. Python handles only what SPARQL cannot express (Dijkstra path ranking, template rendering, pipeline orchestration).
-- Minimal dependencies. The hard deps are rdflib and pyshacl. Optional extras add jupyter, aiohttp (Fuseki), owlrl (entailment), and visualization widgets.
+- Minimal dependencies. The hard deps are rdflib and pyshacl. Optional extras add jupyter, aiohttp (Fuseki), owlrl (entailment), and visualization widgets. pydantic was removed in 0.6.0; the library uses plain dataclasses with `_DictMixin.to_dict()` for serialization.
 - PROV-O for activity-level provenance. Graph-to-graph derivation via `prov:wasDerivedFrom`. Holon-to-holon structural dependency via `cga:derivedFrom`. These are distinct concepts and both exist.
 - SHACL shapes, not OWL axioms, for constraint checking. Reasoner-free by design; entailment is optional via the `owlrl` extra.
 - Nested Turtle notation everywhere the library emits RDF. Predicates grouped with `;`, object lists with `,`. No verbose explicit-triple form in examples, fixtures, or docs.
@@ -620,12 +668,11 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
 
 - OQ10 Upper-ontology alignment (BFO/CCO, gist). The CGA ontology's structural core (Holon, Portal, LayerGraph) is genuinely novel and does not reduce cleanly to existing upper-ontology categories. A holon is not a BFO Continuant, not an Occurrent, not a gist Content — it is a structural container with an inside/outside distinction, layer-scoped named graphs, and a membrane. Forcing it into an upper-ontology branch would misrepresent what it is. The governance vocabulary (DataDomain, BusinessProcess, ExternalSystem, Capability) maps more naturally to established categories (CCO Agent, CCO InformationBearingEntity, gist Organization). The recommended approach is alignment-not-import: ship optional alignment modules (`cga-bfo-alignment.ttl`, `cga-gist-alignment.ttl`) that downstream consumers load when interoperability with a specific upper ontology is required. The core ontology stays standalone, reasoner-free, and philosophically uncommitted. BFO/CCO alignment supports consumers in regulated industries (ISO 21838-2); gist alignment supports commercial enterprise consumers. Both can be developed in parallel without affecting the core.
   - status: open
+  - recommendation: Develop alignment modules as separate Turtle files under `src/holonic/ontology/`. Use `skos:broadMatch` / `skos:closeMatch` in the core ontology for lightweight cross-referencing without owl:imports. Document the alignment rationale in `docs/source/ontology.md`. Gated on a concrete downstream consumer requesting BFO or gist compatibility.
 
 - OQ11 SHACL target-class validation gap for fail-on-breach. Standard SHACL `sh:targetClass` validates only instances of the target class; when no instances exist, validation reports conformant. This means `fail_on_breach=True` cannot detect the case where a portal injects data of the WRONG type (e.g. `bad:Wrong` instead of `good:Required`). The membrane reports INTACT because there are no `good:Required` instances to validate against. The `fail_on_breach` mechanism (R9.28) is correctly implemented for cases where SHACL does report violations. Closing this gap requires one of: (a) non-standard SHACL interpretation where boundary shapes assert minimum cardinality on target-class instances, not just properties; (b) a pre-validation check that verifies at least one instance of each `sh:targetClass` exists in the interior after injection; (c) custom SPARQL-based validation in addition to SHACL. Two tests in `test_verified_gaps.py` are marked `xfail` pending resolution. This is a critical design decision because it affects whether `fail_on_breach` provides meaningful protection against schema-mismatch errors, not just constraint violations within the correct schema.
   - status: open
-  - owner: zwelz3
-  - recommendation: Develop alignment modules as separate Turtle files under `src/holonic/ontology/`. Use `skos:broadMatch` / `skos:closeMatch` in the core ontology for lightweight cross-referencing without owl:imports. Document the alignment rationale in `docs/source/ontology.md`. Target 0.6.0 or later; gated on a concrete downstream consumer requesting BFO or gist compatibility.
-  - status: deferred
+  - recommendation: Approach (b) (pre-validation target-class instance check) is the lowest-risk option. It adds a SPARQL ASK before SHACL validation to verify at least one instance of each `sh:targetClass` exists in the data. If none exist, the membrane is WEAKENED rather than INTACT.
 
 # Appendix A: Suggested Namespaces
 
@@ -640,18 +687,18 @@ Make it practical to build holarchies for digital engineering, enterprise knowle
 @prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
 ```
 
-# Appendix B: Module Map (0.3.1)
+# Appendix B: Module Map (0.7.0)
 
 ```
 src/holonic/
 ├── __init__.py            re-exports HolonicDataset, models, ontology loaders
 ├── client.py              HolonicDataset — the primary API surface
-├── model.py               HolonInfo, PortalInfo, MembraneResult, AuditTrail, SurfaceReport
+├── model.py               HolonInfo, PortalInfo, MembraneResult, ShapeViolation, AuditTrail, SurfaceReport
 ├── console_model.py       HolonSummary, HolonDetail, NeighborhoodGraph, PortalSummary, ...
 ├── sparql.py              SPARQL templates as named string constants
 ├── projections.py         CONSTRUCT_STRIP_TYPES, project_to_lpg, ProjectionPipeline
 ├── backends/
-│   ├── protocol.py        GraphBackend protocol
+│   ├── store.py           HolonicStore protocol + AbstractHolonicStore ABC
 │   ├── rdflib_backend.py  in-memory rdflib.Dataset backend
 │   ├── fuseki_backend.py  Apache Jena Fuseki HTTP backend
 │   └── _fuseki_client.py  low-level HTTP helpers

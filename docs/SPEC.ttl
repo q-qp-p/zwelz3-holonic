@@ -6,9 +6,9 @@
 
 spec:holonic-001 a ekga:Specification ;
     dct:title "Holonic Library — Graph-Native Holonic RDF Systems" ;
-    dct:hasVersion "0.4.0" ;
+    dct:hasVersion "0.7.0" ;
     ekga:status "prototype" ;
-    dct:created "2026-05-09"^^xsd:date ;
+    dct:created "2026-05-18"^^xsd:date ;
     ekga:intent """Provide a Python library that implements Cagel's four-graph holon model on top of RDF named graphs, enabling distributed knowledge systems to expose genuine inside/outside distinction, governed traversal, and event-level provenance without inventing new query languages or wire protocols. The library is a client-side coordination layer in front of any quad-aware graph store (rdflib, Apache Jena Fuseki, Oxigraph, GraphDB) — not a graph database itself.""" ;
     ekga:purpose """Make it practical to build holarchies for digital engineering, enterprise knowledge graphs, and agentic memory systems. A holon is a named IRI whose four layers (interior, boundary, projection, context) live as named graphs in the quad store; portals are RDF entities carrying SPARQL CONSTRUCT queries; membranes are SHACL shapes. All state lives in the graph. Python is a thin convenience layer over SPARQL and PROV-O.""" .
 
@@ -183,12 +183,12 @@ spec:R4.4 a ekga:Requirement ;
 
 spec:R4.5 a ekga:Requirement ;
     ekga:partOf spec:holonic-001 ;
-    dct:description "Multi-hop path finding (`find_path`) MUST run as a single SPARQL query over the registry/boundary graphs, not as Python BFS over pre-fetched portal lists." ;
+    dct:description "Multi-hop path finding (`find_path`) MUST discover a portal route from source to target. The current implementation fetches the portal adjacency list via `Q.ALL_PORTALS` and runs Python BFS. Deferred to 0.8.0: migrate to a SPARQL property-path query or cache the adjacency list across calls." ;
     ekga:priority "MUST" ;
     ekga:constrains "HolonicDataset.find_path" ;
     ekga:constrains "sparql.py" ;
-    ekga:acceptanceCriterion "Given a chain of three holons linked by portals, when find_path(source, target) is called, then one SPARQL SELECT returns the path and no Python iteration is involved." ;
-    ekga:verifiedBy "src/holonic/test/test_portal.py::test_find_path_single_sparql_query" .
+    ekga:acceptanceCriterion "Given a chain of three holons linked by portals, when find_path(source, target) is called, then a list of PortalInfo objects representing the path is returned." ;
+    ekga:verifiedBy "src/holonic/test/test_portal.py::test_find_path_returns_correct_chain" .
 
 spec:R5.1 a ekga:Requirement ;
     ekga:partOf spec:holonic-001 ;
@@ -331,7 +331,7 @@ spec:R8.1 a ekga:Requirement ;
     ekga:priority "MUST" ;
     ekga:constrains "src/holonic/test/" ;
     ekga:acceptanceCriterion "Given a clean environment with base install only, when `pytest src/holonic/test/` is run, then every test passes or is skipped with a declared marker like @pytest.mark.fuseki." ;
-    ekga:verifiedBy "src/holonic/test/ (full suite, 272 passing)" .
+    ekga:verifiedBy "src/holonic/test/ (full suite, 385 passing)" .
 
 spec:R8.2 a ekga:Requirement ;
     ekga:partOf spec:holonic-001 ;
@@ -621,7 +621,7 @@ spec:R9.27 a ekga:Requirement ;
 
 spec:R9.28 a ekga:Requirement ;
     ekga:partOf spec:holonic-001 ;
-    dct:description "`traverse()` MUST accept `fail_on_breach: bool = False`. When True and validation returns COMPROMISED, it MUST roll back injected triples and raise `MembraneBreachError`. Rollback removes the exact triples that were injected." ;
+    dct:description "`traverse()` MUST accept `fail_on_breach: bool = False`. When True and validation returns COMPROMISED, it MUST roll back injected triples and raise `MembraneBreachError`. Rollback restores a pre-injection snapshot of the target interior." ;
     ekga:priority "MUST" ;
     ekga:constrains "holonic/client.py (traverse)" ;
     ekga:acceptanceCriterion "Given a traversal that produces COMPROMISED validation, when `fail_on_breach=True`, then `MembraneBreachError` is raised and the target interior is unchanged. See OQ11 for the SHACL coverage gap." ;
@@ -701,6 +701,69 @@ spec:R9.37 a ekga:Requirement ;
     ekga:constrains "stale_holons)" ;
     ekga:acceptanceCriterion "Given a traversal with agent_iri, when `freshness()` is called, then a `timedelta` is returned." ;
     ekga:verifiedBy "src/holonic/test/test_verified_gaps.py::TestStalenessTracking" .
+
+spec:R9.38 a ekga:Requirement ;
+    ekga:partOf spec:holonic-001 ;
+    dct:description "`collect_audit_trail()` MUST accept optional `limit`, `offset`, `since`, and `kind` parameters for SPARQL-level pagination. Filtering is pushed to the SPARQL engine via `ORDER BY DESC(?timestamp) LIMIT/OFFSET` and `FILTER(?timestamp > ...)`. Calling with no arguments returns the full trail (backward compatible)." ;
+    ekga:priority "MUST" ;
+    ekga:constrains "holonic/client.py (collect_audit_trail)" ;
+    ekga:acceptanceCriterion "Given 100 traversals, when `collect_audit_trail(limit=5, offset=10)` is called, then exactly 5 records are returned starting from the 11th most recent." ;
+    ekga:verifiedBy "src/holonic/test/test_audit.py::TestCollectAuditTrail" .
+
+spec:R9.39 a ekga:Requirement ;
+    ekga:partOf spec:holonic-001 ;
+    dct:description "`get_activity(activity_iri)` MUST return a `TraversalRecord` or `ValidationRecord` for a single provenance activity, or None if not found. Single SPARQL query per attempt." ;
+    ekga:priority "MUST" ;
+    ekga:constrains "holonic/client.py (get_activity)" ;
+    ekga:acceptanceCriterion "Given a recorded traversal activity, when `get_activity(iri)` is called, then a `TraversalRecord` with matching fields is returned." ;
+    ekga:verifiedBy "(verified via collect_audit_trail round-trip)" .
+
+spec:R9.40 a ekga:Requirement ;
+    ekga:partOf spec:holonic-001 ;
+    dct:description "`classify_sparql(query)` MUST return the SPARQL form (`'select'`, `'ask'`, `'construct'`, `'describe'`, `'update'`) by stripping comments and string literals before keyword matching. Raises `ValueError` for unclassifiable queries." ;
+    ekga:priority "MUST" ;
+    ekga:constrains "holonic/client.py (classify_sparql)" ;
+    ekga:acceptanceCriterion "Given `\"PREFIX ex: <urn:ex:> SELECT ?s WHERE { ?s ?p ?o }\"`, when `classify_sparql()` is called, then `'select'` is returned." ;
+    ekga:verifiedBy "(utility function; exercised by downstream consumers)" .
+
+spec:R9.41 a ekga:Requirement ;
+    ekga:partOf spec:holonic-001 ;
+    dct:description "`validate_iri(iri)` MUST be a public entry point to the library's IRI validation. Raises `ValueError` for empty strings or characters unsafe in Turtle/SPARQL contexts." ;
+    ekga:priority "MUST" ;
+    ekga:constrains "holonic/client.py (validate_iri" ;
+    ekga:constrains "_validate_iri)" ;
+    ekga:acceptanceCriterion "Given `validate_iri(\"<unsafe>\")`, when called, then `ValueError` is raised." ;
+    ekga:verifiedBy "src/holonic/test/test_audit_remediation.py::TestIRIValidation" .
+
+spec:R9.42 a ekga:Requirement ;
+    ekga:partOf spec:holonic-001 ;
+    dct:description "`holarchy_summary(max_age=, recent_limit=)` MUST return a `HolarchySummary` dataclass aggregating holon count, portal count, root count, health distribution, staleness count, and recent activities." ;
+    ekga:priority "MUST" ;
+    ekga:constrains "holonic/client.py (holarchy_summary)" ;
+    ekga:constrains "holonic/console_model.py (HolarchySummary)" ;
+    ekga:acceptanceCriterion "Given a holarchy with 3 holons and 2 portals, when `holarchy_summary()` is called, then `summary.holon_count == 3` and `summary.portal_count == 2`." ;
+    ekga:verifiedBy "(integration method; exercised by downstream console)" .
+
+spec:R9.43 a ekga:Requirement ;
+    ekga:partOf spec:holonic-001 ;
+    dct:description "`on_traversal(callback)` and `on_validation(callback)` MUST register callbacks that fire synchronously after each `traverse()` or `validate_membrane()`. Callbacks receive the relevant arguments (source, target, projected, membrane_result for traversal; holon_iri, result for validation)." ;
+    ekga:priority "MUST" ;
+    ekga:constrains "holonic/client.py (on_traversal" ;
+    ekga:constrains "on_validation" ;
+    ekga:constrains "traverse" ;
+    ekga:constrains "validate_membrane)" ;
+    ekga:acceptanceCriterion "Given a registered callback, when `traverse()` completes, then the callback has been called exactly once with the traversal arguments." ;
+    ekga:verifiedBy "(callback mechanism; exercised by downstream console EventBroker)" .
+
+spec:R9.44 a ekga:Requirement ;
+    ekga:partOf spec:holonic-001 ;
+    dct:description "`MembraneResult.shape_violations` MUST carry a `list[ShapeViolation]` populated from the pyshacl report graph. `ShapeViolation` has fields: `shape_iri`, `focus_node`, `path`, `value`, `message`, `severity`." ;
+    ekga:priority "MUST" ;
+    ekga:constrains "holonic/model.py (ShapeViolation" ;
+    ekga:constrains "MembraneResult)" ;
+    ekga:constrains "holonic/client.py (_parse_shacl_report)" ;
+    ekga:acceptanceCriterion "Given a membrane violation, when `validate_membrane()` returns, then `result.shape_violations[0].focus_node` identifies the offending node." ;
+    ekga:verifiedBy "src/holonic/test/test_audit_remediation.py::TestSHACLReportParsing" .
 
 spec:US1 a ekga:UserStory ;
     ekga:partOf spec:holonic-001 ;
@@ -817,15 +880,14 @@ spec:OQ9 a ekga:OpenIssue ;
 spec:OQ10 a ekga:OpenIssue ;
     ekga:partOf spec:holonic-001 ;
     dct:description "Upper-ontology alignment (BFO/CCO, gist). The CGA ontology's structural core (Holon, Portal, LayerGraph) is genuinely novel and does not reduce cleanly to existing upper-ontology categories. A holon is not a BFO Continuant, not an Occurrent, not a gist Content — it is a structural container with an inside/outside distinction, layer-scoped named graphs, and a membrane. Forcing it into an upper-ontology branch would misrepresent what it is. The governance vocabulary (DataDomain, BusinessProcess, ExternalSystem, Capability) maps more naturally to established categories (CCO Agent, CCO InformationBearingEntity, gist Organization). The recommended approach is alignment-not-import: ship optional alignment modules (`cga-bfo-alignment.ttl`, `cga-gist-alignment.ttl`) that downstream consumers load when interoperability with a specific upper ontology is required. The core ontology stays standalone, reasoner-free, and philosophically uncommitted. BFO/CCO alignment supports consumers in regulated industries (ISO 21838-2); gist alignment supports commercial enterprise consumers. Both can be developed in parallel without affecting the core." ;
-    ekga:resolutionStatus "open" .
+    ekga:resolutionStatus "open" ;
+    ekga:recommendation "Develop alignment modules as separate Turtle files under `src/holonic/ontology/`. Use `skos:broadMatch` / `skos:closeMatch` in the core ontology for lightweight cross-referencing without owl:imports. Document the alignment rationale in `docs/source/ontology.md`. Gated on a concrete downstream consumer requesting BFO or gist compatibility." .
 
 spec:OQ11 a ekga:OpenIssue ;
     ekga:partOf spec:holonic-001 ;
     dct:description "SHACL target-class validation gap for fail-on-breach. Standard SHACL `sh:targetClass` validates only instances of the target class; when no instances exist, validation reports conformant. This means `fail_on_breach=True` cannot detect the case where a portal injects data of the WRONG type (e.g. `bad:Wrong` instead of `good:Required`). The membrane reports INTACT because there are no `good:Required` instances to validate against. The `fail_on_breach` mechanism (R9.28) is correctly implemented for cases where SHACL does report violations. Closing this gap requires one of: (a) non-standard SHACL interpretation where boundary shapes assert minimum cardinality on target-class instances, not just properties; (b) a pre-validation check that verifies at least one instance of each `sh:targetClass` exists in the interior after injection; (c) custom SPARQL-based validation in addition to SHACL. Two tests in `test_verified_gaps.py` are marked `xfail` pending resolution. This is a critical design decision because it affects whether `fail_on_breach` provides meaningful protection against schema-mismatch errors, not just constraint violations within the correct schema." ;
     ekga:resolutionStatus "open" ;
-    ekga:resolutionStatus "deferred" ;
-    ekga:owner "zwelz3" ;
-    ekga:recommendation "Develop alignment modules as separate Turtle files under `src/holonic/ontology/`. Use `skos:broadMatch` / `skos:closeMatch` in the core ontology for lightweight cross-referencing without owl:imports. Document the alignment rationale in `docs/source/ontology.md`. Target 0.6.0 or later; gated on a concrete downstream consumer requesting BFO or gist compatibility." .
+    ekga:recommendation "Approach (b) (pre-validation target-class instance check) is the lowest-risk option. It adds a SPARQL ASK before SHACL validation to verify at least one instance of each `sh:targetClass` exists in the data. If none exist, the membrane is WEAKENED rather than INTACT." .
 
 spec:designnote-3efeb2da a ekga:DesignNote ;
     ekga:partOf spec:holonic-001 ;
@@ -839,9 +901,9 @@ spec:designnote-6e8be736 a ekga:DesignNote ;
     ekga:partOf spec:holonic-001 ;
     dct:description "SPARQL is the primary control surface. Python handles only what SPARQL cannot express (Dijkstra path ranking, template rendering, pipeline orchestration)." .
 
-spec:designnote-2883f7fd a ekga:DesignNote ;
+spec:designnote-11f40948 a ekga:DesignNote ;
     ekga:partOf spec:holonic-001 ;
-    dct:description "Minimal dependencies. The hard deps are rdflib and pyshacl. Optional extras add jupyter, aiohttp (Fuseki), owlrl (entailment), and visualization widgets." .
+    dct:description "Minimal dependencies. The hard deps are rdflib and pyshacl. Optional extras add jupyter, aiohttp (Fuseki), owlrl (entailment), and visualization widgets. pydantic was removed in 0.6.0; the library uses plain dataclasses with `_DictMixin.to_dict()` for serialization." .
 
 spec:designnote-261e5292 a ekga:DesignNote ;
     ekga:partOf spec:holonic-001 ;

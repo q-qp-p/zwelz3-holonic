@@ -5,6 +5,48 @@ introduces. Sections are newest-first.
 
 ---
 
+## 0.6.0 → 0.7.0
+
+No breaking changes. All additions are backward-compatible.
+
+### collect_audit_trail() signature change
+
+The method now accepts optional keyword arguments (`limit`,
+`offset`, `since`, `kind`). Calling with no arguments returns the
+full trail as before. If you were passing positional arguments
+(not possible in 0.6.0), this is a no-op.
+
+### MembraneResult has a new field
+
+`shape_violations: list[ShapeViolation]` is added with a default
+empty list. Existing code that unpacks or inspects `MembraneResult`
+is unaffected; the new field is additive.
+
+### AggregateHolonShape SPARQL constraint removed
+
+The SPARQL constraint that checked whether AggregateHolon interiors
+were populated by traversal provenance has been removed. It had two
+bugs: pyshacl ignored `sh:severity sh:Warning` (always reported as
+Violation), and it queried the registry graph for provenance that
+lives in context graphs (so it could never be satisfied). If you
+had code that depended on this constraint firing, it was already
+broken; the removal makes the shape's behavior match its intent.
+
+### New public API
+
+`classify_sparql()`, `validate_iri()`, `get_activity()`,
+`holarchy_summary()`, `on_traversal()`, `on_validation()`,
+`ShapeViolation`, `HolarchySummary`. All are new; no existing
+API surface is affected.
+
+### Notebook execution in test pipeline
+
+`pixi run test` now runs `test-notebooks` in addition to
+`test-unit`. If you have notebooks with runtime errors that
+previously went undetected, they will now fail the test suite.
+
+---
+
 ## 0.5.0 → 0.6.0
 
 One breaking change. All other additions are backward-compatible.

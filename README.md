@@ -261,6 +261,7 @@ The roadmap is tracked as `R9.*` requirements in [`docs/SPEC.md`](./docs/SPEC.md
 
 ### Shipped
 
+- **0.7.0** -- Upstream consumer integration. `collect_audit_trail(limit=, offset=, since=, kind=)` with SPARQL-level pagination. `classify_sparql()`, `validate_iri()`, `get_activity()`, `holarchy_summary()`. `on_traversal()`/`on_validation()` notification hooks. `ShapeViolation` structured type with `MembraneResult.shape_violations`. AggregateHolonShape SPARQL constraint removed (queried wrong graph). Notebook execution wired into `pixi run test`.
 - **0.6.0** -- Governance enforcement and audit remediation. Breaking: portal CONSTRUCT scoping defaults to projections (R9.35). 14 new methods (traverse_path, dry_run, compose, validate_all, update_portal, fail_on_breach, rollback_traversal, last_traversal, derivation_chain, freshness, is_stale, stale_holons, SealedPortalError, batch). Third-party audit: Turtle injection fixed (C1), get_graph copy semantics (C2), IRI validation (S4), structured SHACL parsing (M1), batch context manager (M3). Snapshot rollback (M2), concurrency docs (M4), pydantic removed (O4).
 - **0.5.0** -- Breaking cleanup: removed `GraphBackend` alias, `registry_graph` kwarg/property (R9.18). Added `holon_type` kwarg, `iter_holons/iter_portals_*` generators with `limit`/`offset` pagination (R9.11). `bulk_load()` for batch holarchy construction. `list_named_graphs()` confirmed mandatory (R9.17). Notebook reorganization with sectioned landing page.
 - **0.4.3** -- Ontology enrichment: all 68 properties defined, holon subtype shapes (AgentHolon, AggregateHolon), ClassificationLevel enum (**breaking**: `dataClassification` is now an ObjectProperty), OQ10 upper-ontology alignment strategy.
@@ -269,7 +270,7 @@ The roadmap is tracked as `R9.*` requirements in [`docs/SPEC.md`](./docs/SPEC.md
 - **0.4.0** -- `HolonicStore` protocol (renamed from `GraphBackend`), ABC split, optional native-dispatch hook (R9.8 -- R9.10).
 - **0.3.x** -- Typed graphs, scope resolution, graph-level metadata, projection plugin system (R9.1 -- R9.7).
 
-### 0.7.0 -- Planned
+### 0.8.0 -- Planned
 
 - Decompose `client.py` into delegate modules (S1 from audit)
 - Migrate to parameterized SPARQL queries (S2 from audit)
