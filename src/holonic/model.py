@@ -40,6 +40,21 @@ class MembraneHealth(Enum):
 
 
 @dataclass
+class ShapeViolation(_DictMixin):
+    """A single SHACL shape violation with structured detail.
+
+    .. versionadded:: 0.7.0
+    """
+
+    shape_iri: str | None = None
+    focus_node: str | None = None
+    path: str | None = None
+    value: str | None = None
+    message: str = ""
+    severity: str = "Violation"
+
+
+@dataclass
 class MembraneResult(_DictMixin):
     """Result of SHACL membrane validation."""
 
@@ -49,6 +64,7 @@ class MembraneResult(_DictMixin):
     report_text: str
     violations: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    shape_violations: list[ShapeViolation] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return a summary of the Holon's Membrane."""
@@ -65,6 +81,17 @@ class MembraneResult(_DictMixin):
                 lines.append(f"    - {w}")
         return "\n".join(lines)
 
+    @property
+    def is_healthy(self) -> bool:
+        """True when the membrane is INTACT, False otherwise.
+
+        Convenience property so callers don't need to import
+        ``MembraneHealth`` for a simple boolean check.
+
+        .. versionadded:: 0.6.0
+        """
+        return self.health == MembraneHealth.INTACT
+
 
 @dataclass
 class PortalInfo(_DictMixin):
@@ -75,10 +102,12 @@ class PortalInfo(_DictMixin):
     target_iri: str
     label: str | None = None
     construct_query: str | None = None
+    portal_type: str | None = None
 
     def __repr__(self) -> str:
         lbl = self.label or self.iri.rsplit(":", 1)[-1]
-        return f"Portal({lbl}: {self.source_iri} → {self.target_iri})"
+        ptype = self.portal_type.rsplit(":", 1)[-1] if self.portal_type else "Portal"
+        return f"{ptype}({lbl}: {self.source_iri} -> {self.target_iri})"
 
 
 @dataclass
@@ -132,7 +161,7 @@ class HolarchyTree(_DictMixin):
         connector = "└── " if is_last else "├── "
         label = self.labels.get(iri, iri.rsplit(":", 1)[-1])
         if not prefix:
-            # Root node — no connector
+            # Root node -- no connector
             lines.append(label)
         else:
             lines.append(f"{prefix}{connector}{label}")
@@ -176,6 +205,23 @@ class MembraneBreachError(Exception):
         self.result = result
         super().__init__(
             f"Membrane COMPROMISED for {result.holon_iri}: {len(result.violations)} violation(s)"
+        )
+
+
+class SealedPortalError(ValueError):
+    """Raised when traversal is attempted on a SealedPortal.
+
+    Subclasses ValueError for backward compatibility with code that
+    catches ValueError from traverse_portal().
+
+    .. versionadded:: 0.6.0
+    """
+
+    def __init__(self, portal_iri: str):
+        self.portal_iri = portal_iri
+        super().__init__(
+            f"Portal {portal_iri} is sealed -- traversal is explicitly blocked. "
+            f"Reclassify to TransformPortal to enable traversal."
         )
 
 
@@ -277,7 +323,7 @@ class AuditTrail(_DictMixin):
         if self.traversals:
             lines.append("\n  Pipeline:")
             for i, t in enumerate(self.traversals):
-                arrow = "→"
+                arrow = "->"
                 v = self.validation_for(t.target_iri)
                 health = f" [{v.health_label}]" if v else ""
                 lines.append(f"    {i + 1}. {t.source_label} {arrow} {t.target_label}{health}")

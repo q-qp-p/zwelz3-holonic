@@ -1,7 +1,7 @@
 """SPARQL query templates for holonic operations.
 
-All holonic operations — holon discovery, portal lookup, path finding,
-membrane inspection — are expressed as SPARQL queries.  The client
+All holonic operations -- holon discovery, portal lookup, path finding,
+membrane inspection -- are expressed as SPARQL queries.  The client
 submits these to the backend; no Python data-structure iteration.
 """
 
@@ -87,13 +87,14 @@ FIND_PORTALS_FROM = """
 PREFIX cga:  <urn:holonic:ontology:>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT DISTINCT ?portal ?target ?label ?query
+SELECT DISTINCT ?portal ?target ?label ?query ?portalType
 WHERE {
     graph ?g {
         ?portal cga:sourceHolon ?source ;
             cga:targetHolon ?target .
         OPTIONAL { ?portal rdfs:label ?label }
         OPTIONAL { ?portal cga:constructQuery ?query }
+        OPTIONAL { ?portal a ?portalType . FILTER(?portalType != cga:Portal) }
     }
 }
 """
@@ -102,13 +103,14 @@ FIND_PORTALS_TO = """
 PREFIX cga:  <urn:holonic:ontology:>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT DISTINCT ?portal ?source ?label ?query
+SELECT DISTINCT ?portal ?source ?label ?query ?portalType
 WHERE {
     graph ?g {
         ?portal cga:sourceHolon ?source ;
             cga:targetHolon ?target .
         OPTIONAL { ?portal rdfs:label ?label }
         OPTIONAL { ?portal cga:constructQuery ?query }
+        OPTIONAL { ?portal a ?portalType . FILTER(?portalType != cga:Portal) }
     }
 }
 """
@@ -117,13 +119,14 @@ FIND_PORTAL_DIRECT = """
 PREFIX cga:  <urn:holonic:ontology:>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT DISTINCT ?portal ?label ?query
+SELECT DISTINCT ?portal ?label ?query ?portalType
 WHERE {
     graph ?g {
         ?portal cga:sourceHolon ?source ;
             cga:targetHolon ?target .
         OPTIONAL { ?portal rdfs:label ?label }
         OPTIONAL { ?portal cga:constructQuery ?query }
+        OPTIONAL { ?portal a ?portalType . FILTER(?portalType != cga:Portal) }
     }
 }
 LIMIT 1
@@ -133,12 +136,13 @@ ALL_PORTALS = """
 PREFIX cga:  <urn:holonic:ontology:>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT DISTINCT ?portal ?source ?target ?label
+SELECT DISTINCT ?portal ?source ?target ?label ?portalType
 WHERE {
     graph ?g {
         ?portal cga:sourceHolon ?source ;
             cga:targetHolon ?target .
         OPTIONAL { ?portal rdfs:label ?label }
+        OPTIONAL { ?portal a ?portalType . FILTER(?portalType != cga:Portal) }
     }
 }
 """
@@ -287,7 +291,7 @@ WHERE {
 # ──────────────────────────────────────────────────────────────
 # Holon listing for browser/list views (0.3.1)
 #
-# Lighter than LIST_HOLONS — returns the optional "registry" facets
+# Lighter than LIST_HOLONS -- returns the optional "registry" facets
 # (member_of, classification) in one query so callers don't N+1
 # the layer-graph queries when they only need a summary.
 # ──────────────────────────────────────────────────────────────
@@ -346,7 +350,7 @@ WHERE {{
 # The current RECORD_TRAVERSAL template does not write a structured
 # triple linking the activity back to the portal IRI; the portal IRI
 # only appears inside the rdfs:label string. Until that changes,
-# scope by (source, target) pair — correct in the common case where
+# scope by (source, target) pair -- correct in the common case where
 # at most one portal exists per ordered pair.
 # ──────────────────────────────────────────────────────────────
 
@@ -371,7 +375,7 @@ LIMIT {limit}
 """
 
 # ══════════════════════════════════════════════════════════════
-# 0.3.3 — GRAPH-LEVEL METADATA TEMPLATES
+# 0.3.3 -- GRAPH-LEVEL METADATA TEMPLATES
 #
 # All templates read from and write to the registry graph
 # (urn:holarchy:registry by default; configurable via
@@ -498,7 +502,7 @@ WHERE {{
 """
 
 # ══════════════════════════════════════════════════════════════
-# 0.3.4 — TYPED GRAPHS AND SCOPE RESOLUTION
+# 0.3.4 -- TYPED GRAPHS AND SCOPE RESOLUTION
 #
 # Templates write graph-category typing into the registry and walk
 # the holarchy for scoped discovery. See docs/DECISIONS.md § 0.3.4.
@@ -555,7 +559,7 @@ WHERE {{
 #
 # The resolver issues one BFS query per hop. At each hop, it asks
 # the backend for the neighbors of the current frontier. Portal
-# traversal is directional: "network" follows source→target edges
+# traversal is directional: "network" follows source->target edges
 # outbound, then inbound; "reverse-network" follows only inbound;
 # "containment" walks the cga:memberOf chain.
 
@@ -637,7 +641,7 @@ ASK WHERE {{
 """
 
 # ══════════════════════════════════════════════════════════════
-# 0.3.5 — PROJECTION PIPELINE TEMPLATES
+# 0.3.5 -- PROJECTION PIPELINE TEMPLATES
 # ══════════════════════════════════════════════════════════════
 
 LIST_PIPELINES_FOR_HOLON_TEMPLATE = """

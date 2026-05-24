@@ -284,6 +284,7 @@ class PortalSummary(_DictMixin):
     source_iri: str
     target_iri: str
     label: str | None = None
+    portal_type: str | None = None
     last_traversal: str | None = None
     health: str | None = None
     """ISO-8601 timestamp of the most-recent recorded traversal."""
@@ -298,6 +299,22 @@ class PortalDetail(_DictMixin):
     source_iri: str
     target_iri: str
     label: str | None = None
+    portal_type: str | None = None
     construct_query: str | None = None
     graph_iri: str | None = None
     """Named graph in which this portal is registered (the source's boundary)."""
+
+
+@dataclass
+class HolarchySummary(_DictMixin):
+    """Aggregated holarchy health snapshot for dashboards.
+
+    .. versionadded:: 0.7.0
+    """
+
+    holon_count: int = 0
+    portal_count: int = 0
+    root_count: int = 0
+    health_distribution: dict = field(default_factory=dict)
+    stale_count: int = 0
+    recent_activities: list = field(default_factory=list)

@@ -1,13 +1,13 @@
-"""holonic — Graph-native holonic RDF systems.
+"""holonic -- Graph-native holonic RDF systems.
 
 A lightweight Python client for building holonic knowledge graphs
 backed by rdflib, Apache Jena Fuseki, or any SPARQL-compliant store.
 """
 
-__version__ = "0.5.1"
+__version__ = "0.7.0"
 
 from holonic.backends import AbstractHolonicStore, HolonicStore, RdflibBackend
-from holonic.client import HolonicDataset
+from holonic.client import HolonicDataset, classify_sparql, validate_iri
 from holonic.console_model import (
     ClassInstanceCount,
     GraphMetadata,
@@ -29,6 +29,8 @@ from holonic.model import (
     MembraneHealth,
     MembraneResult,
     PortalInfo,
+    SealedPortalError,
+    ShapeViolation,
     SurfaceReport,
     TraversalRecord,
     ValidationRecord,
@@ -78,6 +80,10 @@ __all__ = [
     "ValidationRecord",
     "HolonInfo",
     "MembraneBreachError",
+    "SealedPortalError",
+    "ShapeViolation",
+    "classify_sparql",
+    "validate_iri",
     "MembraneHealth",
     "MembraneResult",
     "PortalInfo",

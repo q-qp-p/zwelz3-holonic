@@ -1030,6 +1030,95 @@ case — get the correct behavior without changes.
 
 ## How to add a decision to this document
 
+---
+
+## 0.6.0 -- Audit remediation
+
+### D-0.6.0-1 -- Snapshot-based rollback for fail_on_breach
+
+**Context.** The original `fail_on_breach` rollback removed projected triples individually from the target interior. If any projected triple overlapped with pre-existing data, the rollback deleted that data too, leaving the target in a worse state than before.
+
+**Decision.** Snapshot the target interior before injection (`get_graph()` returns a copy post-C2 fix). On breach, restore the snapshot via `put_graph()`. This is correct for all backends and handles the overlap case.
+
+**Alternatives considered.** (a) SPARQL UPDATE transactions (backend-specific, Fuseki only). (b) Per-triple removal with overlap detection (complex, error-prone). Snapshot is simpler and backend-neutral.
+
+### D-0.6.0-2 -- pydantic removed from hard dependencies
+
+**Context.** pydantic was listed in `dependencies` but imported nowhere in the codebase. It adds ~5MB of compiled extensions for users who only need the core library.
+
+**Decision.** Remove from hard deps. If needed for a downstream consumer (e.g., console), add as an optional extra at that time.
+
+### D-0.6.0-3 -- client.py decomposition deferred to pre-0.7
+
+**Context.** `client.py` is ~3,460 lines containing all CRUD, traversal, validation, provenance, projection, console, export, and pipeline methods. The third-party audit (S1) correctly identifies this as the single biggest maintenance risk.
+
+**Decision.** Defer the full decomposition to 0.7 planning. The existing delegation pattern (`self._metadata`, `self._scope`) is the template. Planned extraction groups:
+
+- Traversal: traverse, traverse_portal, traverse_path, dry_run, rollback_traversal
+- Validation: validate_membrane, validate_all, surface_report
+- Provenance: record_traversal, record_validation, collect_audit
+- Console: list_holons_summary, get_holon_detail, neighborhood, etc.
+
+CRUD methods stay in HolonicDataset as the core API surface.
+
+**Rationale for deferral.** Extraction is a refactoring risk that should be done carefully with a clean test-green baseline. It does not add user-facing functionality. The 0.6.0 scope is already large (38 gap tests, 32 audit tests, 1 breaking change).
+
+### D-0.6.0-4 -- Parameterized SPARQL deferred to pre-0.7
+
+**Context.** SPARQL queries are built via f-string interpolation and `.replace()`. The `bindings` parameter on `query()` exists but is unused. The third-party audit (S2) identifies this as fragile.
+
+**Decision.** Defer migration to parameterized queries to 0.7 planning. The current approach works because all interpolated values are IRIs (syntactically constrained). The migration path: start with security-sensitive queries (traverse, remove_holon), then extend to FusekiBackend's HTTP payloads.
+
+### D-0.6.0-5 -- Concurrency semantics documented
+
+**Context.** The `HolonicStore` protocol said nothing about thread safety. The third-party audit (M4) correctly notes this is important for federated deployments.
+
+**Decision.** Added a "Concurrency semantics" section to the `HolonicStore` protocol docstring documenting: RdflibBackend is not thread-safe; FusekiBackend is safe for concurrent reads but multi-step operations are not atomic; callers serialize at the application level.
+
+## 0.7.0 -- Upstream consumer integration
+
+### D-0.7.0-1 -- Paginated audit trail at the SPARQL level
+
+**Context.** A downstream console application called `collect_audit_trail()` on every poll (every 3 seconds), loading the entire PROV-O history into memory, then slicing with Python `[offset:limit]`. For a system with 10,000 traversals this transfers all records over SPARQL on every page load.
+
+**Decision.** Add `limit`, `offset`, `since`, and `kind` parameters to `collect_audit_trail()`. The SPARQL query strips its existing `ORDER BY`, appends `ORDER BY DESC(?timestamp) LIMIT/OFFSET`, and optionally adds a `FILTER(?timestamp > ...)` clause. Filtering moves from Python to the SPARQL engine.
+
+### D-0.7.0-2 -- Push back on Pydantic models (upstream #11)
+
+**Context.** The console defines its own Pydantic response models because the library's `to_dict()` output doesn't have a documented schema. The upstream recommendation was to add Pydantic models to the library for all public return types.
+
+**Decision.** Decline. Pydantic was removed from hard dependencies in 0.6.0. The library uses plain dataclasses with a `_DictMixin` that provides `to_dict()` on all 20+ return types. This is the stable serialization API. The console owns its Pydantic response models; the library should not dictate serialization framework choices to consumers.
+
+### D-0.7.0-3 -- Push back on derivation chain as graph (upstream #6)
+
+**Context.** `derivation_chain(iri)` returns `list[str]`. The console re-fetches holon details for each IRI, then builds graphology JSON manually. The upstream recommendation was to return a `NeighborhoodGraph` with `to_graphology()`.
+
+**Decision.** Decline the return type change. `list[str]` is the correct abstraction for a provenance chain. The library returns data; the console builds visualization. Coupling the return type to a visualization format (graphology) would be a layering violation. The N+1 re-fetch concern is valid but belongs in a separate optimization (batch `get_holon` or richer chain objects), not in a return-type change.
+
+### D-0.7.0-4 -- ShapeViolation structured type (upstream #12)
+
+**Context.** `MembraneResult.violations` was a `list[str]` of human-readable text. When operators investigate a breach, they need to know which SHACL shape was violated, which focus node, which path, and what value triggered it.
+
+**Decision.** Add `ShapeViolation` dataclass with `shape_iri`, `focus_node`, `path`, `value`, `message`, `severity`. Add `MembraneResult.shape_violations: list[ShapeViolation]`. Populated from the pyshacl report graph (structured parsing, not text scanning). The text `violations` list is preserved for backward compatibility.
+
+### D-0.7.0-5 -- Notification hooks (upstream #10)
+
+**Context.** The console polls `collect_audit_trail()` every 3 seconds to detect new events. Events are always delayed by the poll interval.
+
+**Decision.** Add `on_traversal(callback)` and `on_validation(callback)` hook methods. Callbacks fire synchronously within the calling thread after each `traverse()` or `validate_membrane()`. This eliminates polling for events generated by the same process. Cross-process notification (separate agents writing to Fuseki) still requires polling.
+
+### D-0.7.0-6 -- AggregateHolonShape SPARQL constraint removed
+
+**Context.** The AggregateHolonShape had a SPARQL constraint checking whether interior data was populated by traversal provenance. Two bugs: (a) pyshacl ignores `sh:severity sh:Warning` on SPARQLConstraintComponent, always reporting `sh:Violation`; (b) the constraint queries the registry graph but provenance lives in context graphs, so it can never be satisfied.
+
+**Decision.** Remove the SPARQL constraint entirely. The provenance check belongs in runtime validation (e.g., a custom `validate_aggregate_provenance()` method), not in a SHACL shape that queries the wrong graph. The label constraint (`sh:minCount 1, sh:severity sh:Warning`) is preserved.
+
+### D-0.7.0-7 -- Notebook execution as part of test pipeline
+
+**Context.** Notebooks were checked for cleanliness (no committed outputs) but never executed. Several notebooks had runtime errors that went undetected until manual testing.
+
+**Decision.** Add `scripts/test_notebooks.py` that executes every notebook's code cells in a plain Python interpreter. Skips Jupyter-specific constructs (`%pip`, `!shell`, top-level `await`). Catches `ImportError` for optional deps (matplotlib). Wired into `pixi run test` via `test-notebooks` task so notebook execution is verified on every test run.
+
 Decisions are append-only within a release section. Each decision
 has:
 
